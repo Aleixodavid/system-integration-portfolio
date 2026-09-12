@@ -1,86 +1,35 @@
-# 📊 Telemetry Data Pipeline
+# Telemetry Data Pipeline
 
-> **Pipeline Assíncrono de Extração, Transformação e Carga (ETL) & Observabilidade**  
-> Microsserviço de alta performance para ingestão, sanitização, estruturação e análise agregada de dados de telemetria.
+An asynchronous Extract, Transform, Load (ETL) pipeline designed for asset telemetry ingestion, data normalization, and analytical reporting.
 
----
+## Overview
 
-## 🎯 Objetivo do Subprograma
+The Telemetry Data Pipeline receives sensor metrics (CPU usage, memory, temperature, network latency, disk I/O) from remote nodes, validates incoming JSON payloads against strict schemas, normalizes data, and persists events in an optimized SQLite database.
 
-O **Telemetry Data Pipeline** é responsável pela coleta volumétrica de métricas de telemetria (temperatura, uso de CPU, memória, latência de rede, I/O de disco) originadas de nós periféricos e microsserviços. Ele executa a validação rigorosa dos esquemas de dados, normalização de tipos e persistência otimizada para consultas analíticas de baixa latência.
+## Architecture
 
----
+### ETL Engine (`etl_engine.py`)
+- **Extract**: Ingests individual metric events or bulk batches via REST endpoints.
+- **Transform**: Sanitizes inputs, normalizes units, applies UNIX timestamps, and enriches data with tags.
+- **Load**: Persists structured metrics into SQLite.
 
-## 🏛️ Arquitetura & Padrões de Projeto (*Design Patterns*)
+### Schema Validator (`schema_validator.py`)
+Enforces field presence (`source`, `event_type`, `metric_value`), domain constraints, and numeric range limits.
 
-### 1. **Motor ETL (Extract, Transform, Load)**
-- **Arquivo:** `etl_engine.py`
-- **Etapas:**
-  - **Extração:** Recepção de dados via requisições HTTP RESTful em lote (*batch*) ou eventos individuais.
-  - **Transformação:** Higienização de strings, conversão de unidades, timestamping UNIX e enriquecimento de metadados/tags.
-  - **Carga:** Inserção otimizada no banco SQLite relacional.
+### Database Layer (`db_manager.py`)
+Configured with SQLite **Write-Ahead Logging (WAL) mode** (`PRAGMA journal_mode=WAL`), optimistic locking, and composite indexes on `(source, event_type)` and `(event_timestamp DESC)` to deliver query latencies under 150ms.
 
-### 2. **Validador de Schema (Schema Validator)**
-- **Arquivo:** `schema_validator.py`
-- **Validações:**
-  - Verificação de campos obrigatórios (`source`, `event_type`, `metric_value`).
-  - Restrição de domínio para tipos de evento (`cpu_usage`, `memory_usage`, `temperature`, `network_latency`, `disk_io`).
-  - Checagem de limites numéricos sanitizados ($[-1.000.000, 1.000.000]$).
+## API Endpoints
 
-### 3. **SQLite com WAL Mode & Índices Compostos**
-- **Arquivo:** `db_manager.py`
-- **Otimizações de Banco:**
-  - `PRAGMA journal_mode=WAL`: Permite leituras simultâneas sem bloquear gravações.
-  - `PRAGMA synchronous=NORMAL` + `cache_size=-4000`: Máxima eficiência em operações de I/O em disco no Windows.
-  - **Índices Compostos:** `(source, event_type)` e `(event_timestamp DESC)` para responder a consultas agregadas em tempo **< 150ms**.
+- `POST /api/ingest` — Ingest a single telemetry event.
+- `POST /api/ingest/batch` — Ingest a bulk array of metric events.
+- `POST /api/generate-sample` — Populate synthetic metric load (50–1000 events) for testing.
+- `GET /api/reports/summary` — Consolidated metric summary (counts, averages, min/max).
+- `GET /api/reports/by-source` — Metrics aggregated by source node.
+- `GET /api/reports/by-period?granularity=hour` — Time-series aggregation by hour or day.
 
----
-
-## 🔒 Sanitização & Segurança
-
-- **Chaves de Acesso:** Configuradas com o placeholder estático `TEST_TOKEN_API_KEY_001`.
-- **Identificadores:** Utilizam identificadores neutros de teste corporativo (`TEST_CLIENT_SAMPLE_ID`).
-- **Autenticação:** Protegida por autenticação HTTP Basic (`admin` / `admin`).
-
----
-
-## 📡 Endpoints da API (Porta `5002`)
-
-### `POST /api/ingest`
-Ingere um evento individual de telemetria.
-- **Body Exemplo:**
-  ```json
-  {
-    "source": "sensor_alpha",
-    "event_type": "cpu_usage",
-    "metric_value": 45.2,
-    "unit": "percent",
-    "tags": { "env": "production" }
-  }
-  ```
-
-### `POST /api/ingest/batch`
-Ingere múltiplos eventos em uma única requisição com validação individual.
-
-### `POST /api/generate-sample`
-Gera e ingere eventos sintéticos para simulação de carga (entre 50 e 1000 registros).
-
-### `GET /api/reports/summary`
-Retorna estatísticas consolidadas (total de eventos, fontes únicas, médias, mínimos e máximos).
-
-### `GET /api/reports/by-source`
-Agrupa o volume e a média das métricas por fonte de origem.
-
-### `GET /api/reports/by-period?granularity=hour`
-Agrupa métricas agregadas por intervalos de hora ou dia.
-
----
-
-## 🧪 Testes Unitários
-
-Para executar os testes do Pipeline de Telemetria:
+## Running Tests
 
 ```bash
-cd D:\Pessoal\portifolio\telemetry_data_pipeline
 python -m pytest tests/ -v
 ```
